@@ -18,7 +18,7 @@ const NodeGit = require('nodegit');
 const BASEDIR = '~/Documents/BitBarPlugins';					// set your own basedir as desired
 const EXCLUDES = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
 const NUMBER_OF_REPOS = 3;									// change as desired
-const MAX_COMMITS = 1;									// change as desired
+const MAX_COMMITS = 200;										// change as desired
 const GET_REPOS_CMD = "find " + BASEDIR + " -name .git";	// only change if you know what you're doing
 
 const GITICON = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABwElEQVQ4T32TTUtbQRSG33PmqgUt2l2k+yC4MOIHQiK9iaG0oKUi3Qr+ii7Tpf/BH9C6VcFqrIqIwRRq0OrGlYuiFHVrk9w5p9xrEmMyOqvhzPs+54shPHHGfD9WCfg7i7UWXe+PDzb/uqTkCg76fo8X8E8CBsJ3a+0ZUVfaBWkDhJmr1kxAMQvofD3BU5BHgFrZOwQbJ/ACiCtQvLaii8zwXJAG4MF8XzZBVo/2dz+E96Fkep2I3rnaiQCt5jCmiishTg70v7o4v7xZArDgaodc5rpQgW8kUGXdUuERwxpT2GnAdNbboUQy8wuEYeeKSJdF2FO1H7u1/LJQKNwNpTKfCVis6X9TIpXeAch/DkCkc2ATL+3lzxOpTA7Al0hvcUgj2Wyv/VfdBMx4G0TwFQwPwCcRXDPLCaBvAMNQHFWlIxsN0Q2RP+JhoiPwOFA5JEKskaBmPi1s3DbWGEIq5SBvlMcioWCtdLA9E14Tk5kNKN5G8Sbz/bqbTjNEBAEbypGIsao5Zjat5jZAlM33+yQweYaOPp4JlarWmwrLbo47P1M7hEqdFWSLxR83rYN2AuqVUIAVS/BelM2Myxzq/gMuDfaGij7JUwAAAABJRU5ErkJggg==";
@@ -45,6 +45,7 @@ exec(GET_REPOS_CMD, (error, stdout, stderr) => {
 			return str.search(exc) === -1;
 		});
 	});
+	// TODO: get .git modification dates, sort and filter here, to save on futile work
 
 	allRepos = allRepoPaths.map(analyseRepo);	// array of Promises
 
@@ -54,14 +55,14 @@ exec(GET_REPOS_CMD, (error, stdout, stderr) => {
 
 // Using nodegit, open up each repo and save its key details to an object:
 // Function should return a Promise of the reduced repo object
-function analyseRepo(repo_path) {
+function analyseRepo(repoPath) {
 	var repo = {
-		fullpath: repo_path,
-		parentpath: repo_path.substring(0,repo_path.lastIndexOf(path.sep)),
+		fullpath: repoPath,
+		parentpath: repoPath.substring(0,repoPath.lastIndexOf(path.sep)),
 	};
 	repo.dirname = path.basename(repo.parentpath);
 
-	return NodeGit.Repository.open(repo_path)	// Promise
+	return NodeGit.Repository.open(repoPath)	// Promise
 	.then(function(repository) {
 		// Extract repo info:
 		repo.branch = repository.getCurrentBranch()
@@ -83,16 +84,7 @@ function analyseRepo(repo_path) {
 		})
 		.catch(err => {});
 
-		var revwalk = repository.createRevWalk();	// FIXME
-		//revwalk.sorting(NodeGit.Revwalk.SORT.TIME);
-		repo.totalCommits = revwalk.getCommits(MAX_COMMITS)
-		.then(arrayCommit => {
-			console.log(arrayCommit);	// []
-			return arrayCommit.length;
-		})
-		.catch(err => {
-			console.log(err);
-		});
+		repo.totalCommits = countCommits(repository);
 
 		// Export values and move on to last commit when we're done here:
 		return Promise.all([repo.branch, repo.deltas, repo.remotes, repo.totalCommits])
@@ -121,6 +113,22 @@ function analyseRepo(repo_path) {
 	});
 }
 
+function countCommits(repository) {
+	// Walk the repo to count commits:
+	// (Might not count other branches)
+	var revwalk = repository.createRevWalk();
+	revwalk.sorting(NodeGit.Revwalk.SORT.REVERSE);
+	revwalk.pushHead();	// places us at the last commit
+
+	return revwalk.getCommits(MAX_COMMITS)
+	.then(arrayOfCommits => {
+		return arrayOfCommits.length;
+	})
+	.catch(err => {
+		console.log('err', err);
+	});
+}
+
 // Show most recent ones first:
 function sortRecent(a,b) {
 	return b.lastCommitDate - a.lastCommitDate;
@@ -142,7 +150,7 @@ function output(displayRepos) {
 			console.log("Status:", status, " size=11");
 			if (repo.remotes.length > 0)
 				console.log("Remotes:", repo.remotes.join(', '), "| size=11 color=#808080");
-			console.log(repo.totalCommits, "total commits | size=11 color=#808080");
+			console.log("", repo.totalCommits, "total commits | size=11 color=#808080");
 			console.log("Last commit on", d.getDate()+"/"+d.getMonth(), ":", repo.lastCommitMessage, "| length=50 size=12");
 			console.log("--", repo.lastCommitSHA.slice(0,7));
 			console.log("--on branch", repo.branch);
