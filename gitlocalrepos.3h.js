@@ -10,15 +10,16 @@
  * <bitbar.dependencies>node,nodegit</bitbar.dependencies>
  */
 
+const fs = require('fs');
 const path = require('path');
 const exec = require('child_process').exec;
 const NodeGit = require('nodegit');
 
 // User config:
-const BASEDIR = '~/Documents/BitBarPlugins';					// set your own basedir as desired
+const BASEDIR = '~/Dropbox/htdocs/2017';					// set your own basedir as desired
 const EXCLUDES = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
-const NUMBER_OF_REPOS = 3;									// change as desired
-const MAX_COMMITS = 200;										// change as desired
+const NUMBER_OF_REPOS = 7;									// change as desired
+const MAX_COMMITS = 200;									// change as desired
 const GET_REPOS_CMD = "find " + BASEDIR + " -name .git";	// only change if you know what you're doing
 
 const GITICON = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABwElEQVQ4T32TTUtbQRSG33PmqgUt2l2k+yC4MOIHQiK9iaG0oKUi3Qr+ii7Tpf/BH9C6VcFqrIqIwRRq0OrGlYuiFHVrk9w5p9xrEmMyOqvhzPs+54shPHHGfD9WCfg7i7UWXe+PDzb/uqTkCg76fo8X8E8CBsJ3a+0ZUVfaBWkDhJmr1kxAMQvofD3BU5BHgFrZOwQbJ/ACiCtQvLaii8zwXJAG4MF8XzZBVo/2dz+E96Fkep2I3rnaiQCt5jCmiishTg70v7o4v7xZArDgaodc5rpQgW8kUGXdUuERwxpT2GnAdNbboUQy8wuEYeeKSJdF2FO1H7u1/LJQKNwNpTKfCVis6X9TIpXeAch/DkCkc2ATL+3lzxOpTA7Al0hvcUgj2Wyv/VfdBMx4G0TwFQwPwCcRXDPLCaBvAMNQHFWlIxsN0Q2RP+JhoiPwOFA5JEKskaBmPi1s3DbWGEIq5SBvlMcioWCtdLA9E14Tk5kNKN5G8Sbz/bqbTjNEBAEbypGIsao5Zjat5jZAlM33+yQweYaOPp4JlarWmwrLbo47P1M7hEqdFWSLxR83rYN2AuqVUIAVS/BelM2Myxzq/gMuDfaGij7JUwAAAABJRU5ErkJggg==";
@@ -27,25 +28,44 @@ const GITICON = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABwElEQVQ4T32TTUt
 console.log("| dropdown=false templateImage='"+GITICON+"'");
 console.log("---");
 
+const months = ["January", "February", "March", "April", "May", "June",
+"July", "August", "September", "October", "November", "December"];
+
 // Prepare data containers:
 var allRepoPaths = [];
 var allRepos = [];
 
 // Run a shell command to find all the .git directories:
+// Process the results to keep just the most recently modified N .gits:
 exec(GET_REPOS_CMD, (error, stdout, stderr) => {
     if (error) {
         console.error('stderr', stderr);
         throw error;
     }
 	allRepoPaths = stdout.split(/\n/)
-	.filter(str => str.length > 0)
+	.filter(repoPath => repoPath.length > 0)
 	// Apply excludes:
-	.filter(str => {
+	.filter(repoPath => {
 		return EXCLUDES.every(exc => {
-			return str.search(exc) === -1;
+			return repoPath.search(exc) === -1;
 		});
-	});
-	// TODO: get .git modification dates, sort and filter here, to save on futile work
+	})
+	// Attach index modified time:
+	.map(repoPath => {
+		var stats = fs.statSync(repoPath+'/index');
+		return {
+			path: repoPath,
+			mtime: new Date(stats.mtime).getTime()
+		};
+	})
+	// Most recent first:
+	.sort((a,b) => b.mtime - a.mtime)	// BUG ordering?
+	// Limit by number:
+	.slice(0, NUMBER_OF_REPOS)
+	// Discard mtime:
+	.map(obj => obj.path)
+
+	//console.warn(allRepoPaths);
 
 	allRepos = allRepoPaths.map(analyseRepo);	// array of Promises
 
@@ -113,6 +133,7 @@ function analyseRepo(repoPath) {
 	});
 }
 
+// Count commits from HEAD backwards:
 function countCommits(repository) {
 	// Walk the repo to count commits:
 	// (Might not count other branches)
@@ -137,11 +158,8 @@ function sortRecent(a,b) {
 // Output:
 function output(displayRepos) {
 	console.log("Local git repos (most recent first):");
-	//console.log("AR", displayRepos[0]);
 	console.log("---");
 	displayRepos
-		.sort(sortRecent)
-		.slice(0, NUMBER_OF_REPOS)
 		.forEach(function(repo) {
 			var d = repo.lastCommitDate;
 			var status = (repo.deltas > 0) ? "clean | color=green" : "changed files | color=indianred";
@@ -151,7 +169,7 @@ function output(displayRepos) {
 			if (repo.remotes.length > 0)
 				console.log("Remotes:", repo.remotes.join(', '), "| size=11 color=#808080");
 			console.log("", repo.totalCommits, "total commits | size=11 color=#808080");
-			console.log("Last commit on", d.getDate()+"/"+d.getMonth(), ":", repo.lastCommitMessage, "| length=50 size=12");
+			console.log("Last commit on", d.getDate(), months[d.getMonth()].slice(0,3), ":", repo.lastCommitMessage, "| length=50 size=12");
 			console.log("--", repo.lastCommitSHA.slice(0,7));
 			console.log("--on branch", repo.branch);
 			console.log("--by", repo.lastCommitAuthor);
@@ -159,6 +177,7 @@ function output(displayRepos) {
 			console.log("--Show repo in Finder | bash=open param1="+repo.parentpath+" terminal=true");
 			console.log("---");
 		});
+	// Menubar afters:
 	console.log("Options");
 	console.log("--Set your base folder, excludes and repo limit in the script");
 	console.log("--Open script file | bash='${EDITOR:-nano}' param1="+__filename);
