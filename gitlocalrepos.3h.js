@@ -10,28 +10,21 @@
  * <bitbar.dependencies>node,nodegit</bitbar.dependencies>
  */
 
-// find all local git repos (under a certain folder) - OK
-// exclude unwanted - OK
-// get last commit (modified?) date - OK
-// get total commits
-// clean/dirty? - OK
-// remote status?
-// display in list - OK
-
 const path = require('path');
 const exec = require('child_process').exec;
-const Git = require('nodegit');
+const NodeGit = require('nodegit');
 
 // User config:
-const basedir = '~/Dropbox/htdocs/2017';	// set your own basedir as desired
-const excludes = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
-const numberOfRepos = 2;						// change if you want
-const GET_REPOS_CMD = "find " + basedir + " -name .git";	// only change if you know what you're doing
+const BASEDIR = '~/Documents/BitBarPlugins';					// set your own basedir as desired
+const EXCLUDES = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
+const NUMBER_OF_REPOS = 3;									// change as desired
+const MAX_COMMITS = 1;									// change as desired
+const GET_REPOS_CMD = "find " + BASEDIR + " -name .git";	// only change if you know what you're doing
 
 const GITICON = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABwElEQVQ4T32TTUtbQRSG33PmqgUt2l2k+yC4MOIHQiK9iaG0oKUi3Qr+ii7Tpf/BH9C6VcFqrIqIwRRq0OrGlYuiFHVrk9w5p9xrEmMyOqvhzPs+54shPHHGfD9WCfg7i7UWXe+PDzb/uqTkCg76fo8X8E8CBsJ3a+0ZUVfaBWkDhJmr1kxAMQvofD3BU5BHgFrZOwQbJ/ACiCtQvLaii8zwXJAG4MF8XzZBVo/2dz+E96Fkep2I3rnaiQCt5jCmiishTg70v7o4v7xZArDgaodc5rpQgW8kUGXdUuERwxpT2GnAdNbboUQy8wuEYeeKSJdF2FO1H7u1/LJQKNwNpTKfCVis6X9TIpXeAch/DkCkc2ATL+3lzxOpTA7Al0hvcUgj2Wyv/VfdBMx4G0TwFQwPwCcRXDPLCaBvAMNQHFWlIxsN0Q2RP+JhoiPwOFA5JEKskaBmPi1s3DbWGEIq5SBvlMcioWCtdLA9E14Tk5kNKN5G8Sbz/bqbTjNEBAEbypGIsao5Zjat5jZAlM33+yQweYaOPp4JlarWmwrLbo47P1M7hEqdFWSLxR83rYN2AuqVUIAVS/BelM2Myxzq/gMuDfaGij7JUwAAAABJRU5ErkJggg==";
 
 // Set icon:
-console.log("| dropdown=false templateImage='"+GITICON+"'");	// TODO: icon
+console.log("| dropdown=false templateImage='"+GITICON+"'");
 console.log("---");
 
 // Prepare data containers:
@@ -48,7 +41,7 @@ exec(GET_REPOS_CMD, (error, stdout, stderr) => {
 	.filter(str => str.length > 0)
 	// Apply excludes:
 	.filter(str => {
-		return excludes.every(exc => {
+		return EXCLUDES.every(exc => {
 			return str.search(exc) === -1;
 		});
 	});
@@ -68,28 +61,48 @@ function analyseRepo(repo_path) {
 	};
 	repo.dirname = path.basename(repo.parentpath);
 
-	return Git.Repository.open(repo_path)	// Promise
+	return NodeGit.Repository.open(repo_path)	// Promise
 	.then(function(repository) {
 		// Extract repo info:
-		repo.deltas = Git.Diff.indexToWorkdir(repository).then(diff => {
-			return diff.numDeltas;
-		});
-		repo.remotes = repository.getRemotes().then(remotes => {
-			return Object.keys(remotes).join(', ');
-		});
-		repo.branch = repository.getCurrentBranch().then(ref => {
+		repo.branch = repository.getCurrentBranch()
+		.then(ref => {
 			return path.basename(ref.name());
 		});
-		repo.totalCommits = 0;	// TODO
 
-		return Promise.all([repo.deltas, repo.remotes, repo.branch])
-		.then(function([deltas,remotes,branch]) {
+		repo.deltas = NodeGit.Diff.indexToWorkdir(repository)
+		.then(diff => {
+			return diff.numDeltas;
+		});
+
+		repo.remotes = repository.getReferenceNames(3)
+		.then(arrayString => {
+			// Keep only remote's name/branch:
+			return arrayString
+				.filter(str => str.includes('remotes'))
+				.map(str => str.slice(str.indexOf('remotes') + 8));
+		})
+		.catch(err => {});
+
+		var revwalk = repository.createRevWalk();	// FIXME
+		//revwalk.sorting(NodeGit.Revwalk.SORT.TIME);
+		repo.totalCommits = revwalk.getCommits(MAX_COMMITS)
+		.then(arrayCommit => {
+			console.log(arrayCommit);	// []
+			return arrayCommit.length;
+		})
+		.catch(err => {
+			console.log(err);
+		});
+
+		// Export values and move on to last commit when we're done here:
+		return Promise.all([repo.branch, repo.deltas, repo.remotes, repo.totalCommits])
+		.then(function([branch, deltas, remotes, totalCommits]) {
 			// Assign resolved values to repo object:
+			repo.branch = branch;
 			repo.deltas = deltas;
 			repo.remotes = remotes;
-			repo.branch = branch;
+			repo.totalCommits = totalCommits;
 
-			// Move on to last commit when we're done here:
 			return repository.getHeadCommit();	// Promise
 		});
 	})
@@ -98,7 +111,7 @@ function analyseRepo(repo_path) {
 		repo.lastCommitSHA = commit.sha();
 		repo.lastCommitDate = commit.date();
 		repo.lastCommitMessage = commit.message().replace(/(-|\s)+/g, ' ');	// strip dashes & newlines
-		repo.lastCommitAuthor = commit.author().name();
+		repo.lastCommitAuthor = commit.author().name() + ' <' + commit.author().email() + '>';
 		// By this point repository & commit Promises have resolved
 		// Return the repo in a Promise:
 		return Promise.resolve(repo);
@@ -115,24 +128,26 @@ function sortRecent(a,b) {
 
 // Output:
 function output(displayRepos) {
-	console.log("Local git repos: | templateImage='" + GITICON + "'");
+	console.log("Local git repos (most recent first):");
 	//console.log("AR", displayRepos[0]);
 	console.log("---");
 	displayRepos
 		.sort(sortRecent)
-		.slice(0, numberOfRepos)
+		.slice(0, NUMBER_OF_REPOS)
 		.forEach(function(repo) {
+			var d = repo.lastCommitDate;
 			var status = (repo.deltas > 0) ? "clean | color=green" : "changed files | color=indianred";
 			// Format display for menubar:
 			console.log(repo.dirname, "| font=LucidaGrande-Bold color=black");
 			console.log("Status:", status, " size=11");
-			console.log("Remotes:", repo.remotes, "| size=11 color=#999999");
-			console.log(repo.totalCommits, "total commits | size=11 color=#999999");
-			console.log("Last commit:", repo.lastCommitMessage, "| length=40 size=12");
+			if (repo.remotes.length > 0)
+				console.log("Remotes:", repo.remotes.join(', '), "| size=11 color=#808080");
+			console.log(repo.totalCommits, "total commits | size=11 color=#808080");
+			console.log("Last commit on", d.getDate()+"/"+d.getMonth(), ":", repo.lastCommitMessage, "| length=50 size=12");
 			console.log("--", repo.lastCommitSHA.slice(0,7));
 			console.log("--on branch", repo.branch);
 			console.log("--by", repo.lastCommitAuthor);
-			console.log("--date:", repo.lastCommitDate);
+			console.log("--date:", d.toString());
 			console.log("--Show repo in Finder | bash=open param1="+repo.parentpath+" terminal=true");
 			console.log("---");
 		});
