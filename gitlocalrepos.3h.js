@@ -14,7 +14,7 @@
 // exclude unwanted - OK
 // get last commit (modified?) date - OK
 // get total commits
-// clean/dirty?
+// clean/dirty? - OK
 // remote status?
 // display in list - OK
 
@@ -23,13 +23,12 @@ const exec = require('child_process').exec;
 const Git = require('nodegit');
 
 // User config:
-const basedir = '~/Dropbox/htdocs';	// set your own basedir as desired
+const basedir = '~/Dropbox/htdocs/2017';	// set your own basedir as desired
 const excludes = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
-const numberOfRepos = 10;						// change if you want
+const numberOfRepos = 2;						// change if you want
 const GET_REPOS_CMD = "find " + basedir + " -name .git";	// only change if you know what you're doing
 
-const GITICON =
-"iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAB+ElEQVQ4T43Tz2pTURAG8G/mpCD4AlVcKdhuNBHpQpNAciMq4qI+gaC0CuLCha7EQgsuXIgIVbBQ0DcQQRDEGzBFELTtShci+BfENzC588m5aW7T5OakZ3XgnvmdmTlzBWNWsdI4LOBLM1iBdu7ju+aXUIiEPnqM6MQKt3/r3E9NrB5Cg2Cp3LgH4c2BS4NoLnj8RG06cXwq0HmCC4Be2C06BHqsoxqLYBKwP2Y45QR7oLKXia1C3cFQ+TvAo+X6lECaXay7BLy43oqf+X2pGs2BeNKX7VD5GZiH+UCSi5tr8YLfH6tG10k8DJWfgh4jNXbKfYOvbmaJqM4B8pfC345yl+CZUaj40TBDMw/bDuKyAAWCszCchbgiYG2ILAI41N9TKVWizwCmwvPdA+UKxB5svG3e8OeLJ6PToniV9dv4Q45Ua+8ddWbXILCy0Xozn4KVxnkBX/RiDfgkM7Xa5L+OxgJMj0a3M/Q9VXH3Ifhl6NzK/iJLvjqdqKePEkINaIvIJQELlmBFFYWhi7ewD63X37OxGYUKeWd9LV5Kx6YSLRG4vQPsw7pz27fyUIKXN1vxagqWo6sUPM5CBrAhMK98A76p8JpRVIFHAA6kYA6WC47raQgbCQbREZllsxiav6GejsGCGfYu8mi7w+egm3Cis340Qkn8B2ZrG9Schh6FAAAAAElFTkSuQmCC";
+const GITICON = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABwElEQVQ4T32TTUtbQRSG33PmqgUt2l2k+yC4MOIHQiK9iaG0oKUi3Qr+ii7Tpf/BH9C6VcFqrIqIwRRq0OrGlYuiFHVrk9w5p9xrEmMyOqvhzPs+54shPHHGfD9WCfg7i7UWXe+PDzb/uqTkCg76fo8X8E8CBsJ3a+0ZUVfaBWkDhJmr1kxAMQvofD3BU5BHgFrZOwQbJ/ACiCtQvLaii8zwXJAG4MF8XzZBVo/2dz+E96Fkep2I3rnaiQCt5jCmiishTg70v7o4v7xZArDgaodc5rpQgW8kUGXdUuERwxpT2GnAdNbboUQy8wuEYeeKSJdF2FO1H7u1/LJQKNwNpTKfCVis6X9TIpXeAch/DkCkc2ATL+3lzxOpTA7Al0hvcUgj2Wyv/VfdBMx4G0TwFQwPwCcRXDPLCaBvAMNQHFWlIxsN0Q2RP+JhoiPwOFA5JEKskaBmPi1s3DbWGEIq5SBvlMcioWCtdLA9E14Tk5kNKN5G8Sbz/bqbTjNEBAEbypGIsao5Zjat5jZAlM33+yQweYaOPp4JlarWmwrLbo47P1M7hEqdFWSLxR83rYN2AuqVUIAVS/BelM2Myxzq/gMuDfaGij7JUwAAAABJRU5ErkJggg==";
 
 // Set icon:
 console.log("| dropdown=false templateImage='"+GITICON+"'");	// TODO: icon
@@ -53,7 +52,6 @@ exec(GET_REPOS_CMD, (error, stdout, stderr) => {
 			return str.search(exc) === -1;
 		});
 	});
-    //console.warn(allRepoPaths);
 
 	allRepos = allRepoPaths.map(analyseRepo);	// array of Promises
 
@@ -68,20 +66,36 @@ function analyseRepo(repo_path) {
 		fullpath: repo_path,
 		parentpath: repo_path.substring(0,repo_path.lastIndexOf(path.sep)),
 	};
-	repo.dir = path.basename(repo.parentpath);
+	repo.dirname = path.basename(repo.parentpath);
 
 	return Git.Repository.open(repo_path)	// Promise
 	.then(function(repository) {
 		// Extract repo info:
-		repo.status = Object.keys(repository.getStatus()).join(', ');	// TODO
-		repo.remotes = Object.keys(repository.getRemotes()).join(', ');	// TODO
-		repo.branch = repository.getCurrentBranch().name;				// BUG: undefined
+		repo.deltas = Git.Diff.indexToWorkdir(repository).then(diff => {
+			return diff.numDeltas;
+		});
+		repo.remotes = repository.getRemotes().then(remotes => {
+			return Object.keys(remotes).join(', ');
+		});
+		repo.branch = repository.getCurrentBranch().then(ref => {
+			return path.basename(ref.name());
+		});
 		repo.totalCommits = 0;	// TODO
-		// Move on to last commit:
-		return repository.getHeadCommit();	// Promise
+
+		return Promise.all([repo.deltas, repo.remotes, repo.branch])
+		.then(function([deltas,remotes,branch]) {
+			// Assign resolved values to repo object:
+			repo.deltas = deltas;
+			repo.remotes = remotes;
+			repo.branch = branch;
+
+			// Move on to last commit when we're done here:
+			return repository.getHeadCommit();	// Promise
+		});
 	})
 	.then(function(commit) {
 		// Extract last commit info:
+		repo.lastCommitSHA = commit.sha();
 		repo.lastCommitDate = commit.date();
 		repo.lastCommitMessage = commit.message().replace(/(-|\s)+/g, ' ');	// strip dashes & newlines
 		repo.lastCommitAuthor = commit.author().name();
@@ -95,10 +109,8 @@ function analyseRepo(repo_path) {
 }
 
 // Show most recent ones first:
-function sortRecent(repos) {
-	return repos.sort(function(a,b) {
-		return b.lastCommitTime - a.lastCommitTime;
-	});
+function sortRecent(a,b) {
+	return b.lastCommitDate - a.lastCommitDate;
 }
 
 // Output:
@@ -106,19 +118,24 @@ function output(displayRepos) {
 	console.log("Local git repos: | templateImage='" + GITICON + "'");
 	//console.log("AR", displayRepos[0]);
 	console.log("---");
-	displayRepos.slice(0, numberOfRepos).forEach(function(repo) {
-		//repo = Promise.resolve(repo);
-		// Format display for menubar:
-		console.log(repo.dir, "| font=LucidaGrande-Bold color=black");
-		console.log("Status:", repo.status, "| size=11 color=#999999");
-		console.log("Last commit:", repo.lastCommitDate, "| size=11 color=#999999");
-		console.log("--msg:", repo.lastCommitMessage);
-		console.log("--on", repo.branch);
-		console.log("--by", repo.lastCommitAuthor);
-		console.log("--"+repo.totalCommits, "total commits");
-		console.log("--Show repo in Finder | bash=open param1="+repo.parentpath+" terminal=true");
-	});
-	console.log("---");
+	displayRepos
+		.sort(sortRecent)
+		.slice(0, numberOfRepos)
+		.forEach(function(repo) {
+			var status = (repo.deltas > 0) ? "clean | color=green" : "changed files | color=indianred";
+			// Format display for menubar:
+			console.log(repo.dirname, "| font=LucidaGrande-Bold color=black");
+			console.log("Status:", status, " size=11");
+			console.log("Remotes:", repo.remotes, "| size=11 color=#999999");
+			console.log(repo.totalCommits, "total commits | size=11 color=#999999");
+			console.log("Last commit:", repo.lastCommitMessage, "| length=40 size=12");
+			console.log("--", repo.lastCommitSHA.slice(0,7));
+			console.log("--on branch", repo.branch);
+			console.log("--by", repo.lastCommitAuthor);
+			console.log("--date:", repo.lastCommitDate);
+			console.log("--Show repo in Finder | bash=open param1="+repo.parentpath+" terminal=true");
+			console.log("---");
+		});
 	console.log("Options");
 	console.log("--Set your base folder, excludes and repo limit in the script");
 	console.log("--Open script file | bash='${EDITOR:-nano}' param1="+__filename);
