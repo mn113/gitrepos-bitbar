@@ -5,7 +5,7 @@
  * <bitbar.version>v0.2</bitbar.version>
  * <bitbar.author>M. Nicholson</bitbar.author>
  * <bitbar.author.github>mn113</bitbar.author.github>
- * <bitbar.image>http://i.imgur.com/...</bitbar.image>TODO screenshot
+ * <bitbar.image>https://github.com/mn113/gitrepos-bitbar/blob/master/gitlocalrepos-bitbar1.png</bitbar.image>
  * <bitbar.desc>List local git repos and their statuses</bitbar.desc>
  * <bitbar.dependencies>node,nodegit</bitbar.dependencies>
  */
@@ -16,7 +16,7 @@ const exec = require('child_process').exec;
 const NodeGit = require('nodegit');
 
 // User config:
-const BASEDIR = '~/Dropbox/htdocs/2017';					// set your own basedir as desired
+const BASEDIR = '~/Documents/BitBarPlugins';					// set your own basedir as desired
 const EXCLUDES = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
 const NUMBER_OF_REPOS = 7;									// change as desired
 const MAX_COMMITS = 200;									// change as desired
@@ -59,7 +59,7 @@ exec(GET_REPOS_CMD, (error, stdout, stderr) => {
 		};
 	})
 	// Most recent first:
-	.sort((a,b) => b.mtime - a.mtime)	// BUG ordering?
+	.sort((a,b) => b.mtime - a.mtime)
 	// Limit by number:
 	.slice(0, NUMBER_OF_REPOS)
 	// Discard mtime:
