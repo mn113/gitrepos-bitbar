@@ -1,4 +1,4 @@
-#!/usr/bin/env /Users/martin/.nvm/versions/node/v8.4.0/bin/node
+#!/usr/bin/env /usr/local/bin/node
 
 /*
  * <bitbar.title>Git Local Repos</bitbar.title>
@@ -16,7 +16,7 @@ const exec = require('child_process').exec;
 const NodeGit = require('nodegit');
 
 // User config:
-const BASEDIR = '~/Documents/BitBarPlugins';					// set your own basedir as desired
+const BASEDIR = '~/Dropbox/htdocs/2017';					// set your own basedir as desired
 const EXCLUDES = [/\.bower/, /Library\//, /node_modules/, /phonecat/];	// list of regexes of paths to exclude
 const NUMBER_OF_REPOS = 7;									// change as desired
 const MAX_COMMITS = 200;									// change as desired
@@ -92,7 +92,7 @@ function analyseRepo(repoPath) {
 
 		repo.deltas = NodeGit.Diff.indexToWorkdir(repository)
 		.then(diff => {
-			return diff.numDeltas;
+			return diff.numDeltas();
 		});
 
 		repo.remotes = repository.getReferenceNames(3)
@@ -162,10 +162,10 @@ function output(displayRepos) {
 	displayRepos
 		.forEach(function(repo) {
 			var d = repo.lastCommitDate;
-			var status = (repo.deltas > 0) ? "clean | color=green" : "changed files | color=indianred";
+			var status = (repo.deltas > 0) ? "clean | color=lawngreen" : "changed files | color=indianred";
 			// Format display for menubar:
 			console.log(repo.dirname, "| font=LucidaGrande-Bold color=black");
-			console.log("Status:", status, " size=11");
+			console.log("Status:", status, "size=11");
 			if (repo.remotes.length > 0)
 				console.log("Remotes:", repo.remotes.join(', '), "| size=11 color=#808080");
 			console.log("", repo.totalCommits, "total commits | size=11 color=#808080");
