@@ -108,12 +108,13 @@ function analyseRepo(repoPath) {
 
 		// Export values and move on to last commit when we're done here:
 		return Promise.all([repo.branch, repo.deltas, repo.remotes, repo.totalCommits])
-		.then(function([branch, deltas, remotes, totalCommits]) {
+		.then(function(data) {
+			//var [branch, deltas, remotes, totalCommits] = data;
 			// Assign resolved values to repo object:
-			repo.branch = branch;
-			repo.deltas = deltas;
-			repo.remotes = remotes;
-			repo.totalCommits = totalCommits;
+			repo.branch = data.branch;
+			repo.deltas = data.deltas;
+			repo.remotes = data.remotes;
+			repo.totalCommits = data.totalCommits;
 
 			return repository.getHeadCommit();	// Promise
 		});
